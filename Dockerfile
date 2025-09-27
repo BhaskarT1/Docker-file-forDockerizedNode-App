@@ -1,28 +1,32 @@
-#base image #instead of installing all below node manuallly on ubuntu we can use lightweight already build image for node that is alpine it save space 
-#before using alpine it was arround 300mb but now it got half of it 
-#FROM ubuntu
-FROM node:22-alpine   
+# ---------- BASE (lightweight node image) ----------
+FROM node:22-alpine AS base
+WORKDIR /app
 
-WORKDIR /home/app 
+# Create a non-root user/group (UID/GID 1001)
+RUN addgroup -S -g 1001 nodejs \
+  && adduser -S -u 1001 -G nodejs nodejs
 
-#installing node in ubuntu image 
-# RUN  apt-get update 
-# RUN apt install -y curl
-# RUN curl -sL https://deb.nodesource.com/setup_22.x -o /tmp/nodesource_setup.sh
-# RUN bash /tmp/nodesource_setup.sh
-# RUN apt install -y nodejs
+# ---------- BUILDER (install deps) ----------
+FROM base AS builder
+COPY package*.json ./
+RUN npm ci        # install all dependencies
+COPY index.js .   # copy your code
 
-#copying source code to docker image Syntax copy sourc destination 
-COPY package*.json .
-#move packagelock json cause for if changes in package then run npm i otherwise it cached it and take less time for build 
+# ---------- RUNNER (production image) ----------
+FROM base AS runner
+ENV NODE_ENV=production
+WORKDIR /app
 
-RUN npm install 
-COPY Dockerfile Dockerfile
-COPY index.js index.js
+# Copy only package files & install prod deps
+COPY package*.json ./
+RUN npm ci --omit=dev
 
+# Copy app code from builder
+COPY --from=builder /app/index.js .
 
+# Make sure user owns everything
+RUN chown -R nodejs:nodejs /app
+USER nodejs
 
 EXPOSE 8000
-
-#CMD ["npm" , "start"]  this is for after building this docker file this cmd will automatically start the server if run docker file 
-CMD ["npm" , "start"]
+CMD ["npm", "start"]
